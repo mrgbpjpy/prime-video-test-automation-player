@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: prime-video-backend
+    env: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npx ts-node server.ts
+    envVars:
+      - key: PORT
+        value: 5000
