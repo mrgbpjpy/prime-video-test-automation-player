@@ -1,120 +1,102 @@
-import express, { Request, Response } from 'express';
-import cors from 'cors';
-import multer from 'multer';
-import fs from 'fs';
-import path from 'path';
-import { spawn } from 'child_process';
+import React, { useState, ChangeEvent } from 'react';
 
-const app = express();
-const PORT = process.env.PORT || 5000;
+const App: React.FC = () => {
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [uploading, setUploading] = useState<boolean>(false);
+  const [uploadComplete, setUploadComplete] = useState<boolean>(false);
+  const [conversionStatus, setConversionStatus] = useState<string>('');
+  const [videoPath, setVideoPath] = useState<string>('');
 
-// Enable CORS
-app.use(cors());
-app.use(express.json());
-
-// Set up Multer for file uploads
-const upload = multer({ dest: 'uploads/' });
-
-// Serve HLS output statically from /videos
-app.use('/videos', express.static(path.join(__dirname, 'videos'), {
-  setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.m3u8')) {
-      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-    } else if (filePath.endsWith('.ts')) {
-      res.setHeader('Content-Type', 'video/mp2t');
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleUpload(file);
     }
-  }
-}));
+  };
 
-// Upload endpoint
-app.post('/upload', upload.single('video'), async (req: Request, res: Response) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'No video file uploaded' });
-  }
+  const handleUpload = (file: File) => {
+    const formData = new FormData();
+    formData.append('video', file);
 
-  const inputPath = req.file.path;
-  const fileNameNoExt = path.parse(req.file.originalname).name.replace(/\s+/g, '_');
-  const outputDir = path.join(__dirname, 'videos', fileNameNoExt);
+    setUploading(true);
+    setUploadProgress(0);
+    setUploadComplete(false);
+    setConversionStatus('');
+    setVideoPath('');
 
-  // Create output directory
-  fs.mkdirSync(outputDir, { recursive: true });
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', 'https://prime-video-backend.onrender.com/upload', true);
 
-  const outputM3U8 = path.join(outputDir, 'output.m3u8');
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const percent = Math.round((event.loaded / event.total) * 100);
+        setUploadProgress(percent);
+      }
+    };
 
-  // FFmpeg HLS conversion
-  const ffmpeg = spawn('ffmpeg', [
-    '-i', inputPath,
-    '-codec:v', 'libx264',
-    '-codec:a', 'aac',
-    '-strict', 'experimental',
-    '-start_number', '0',
-    '-hls_time', '10',
-    '-hls_list_size', '0',
-    '-f', 'hls',
-    outputM3U8
-  ]);
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === 4) {
+        setUploading(false);
 
-  ffmpeg.stderr.on('data', (data) => {
-    console.error(`FFmpeg error: ${data}`);
-  });
+        if (xhr.status === 200) {
+          setUploadComplete(true);
+          setConversionStatus('Converting video...');
 
-  ffmpeg.on('exit', (code) => {
-    if (code === 0) {
-      const streamUrl = `/videos/${fileNameNoExt}/output.m3u8`;
-      const thumbnailUrl = ''; // Optional
-      return res.status(200).json({ streamUrl, thumbnailUrl });
-    } else {
-      return res.status(500).json({ error: 'FFmpeg failed to process video' });
-    }
-  });
-});
+          try {
+            const { streamUrl } = JSON.parse(xhr.responseText);
 
-// ✅ Root GET route to verify backend is live
-app.get('/', (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>Backend Status</title>
-      <style>
-        body {
-          font-family: Arial, sans-serif;
-          background: #f5f5f5;
-          color: #333;
-          text-align: center;
-          padding: 50px;
+            const pollInterval = setInterval(() => {
+              fetch(`https://prime-video-backend.onrender.com${streamUrl}`, { method: 'HEAD' })
+                .then(res => {
+                  if (res.ok) {
+                    clearInterval(pollInterval);
+                    setConversionStatus('✅ Done! Video ready to watch.');
+                    setVideoPath(`https://prime-video-backend.onrender.com${streamUrl}`);
+                  }
+                })
+                .catch(() => {});
+            }, 2000);
+          } catch (err) {
+            setConversionStatus('❌ Failed to parse server response.');
+          }
+        } else {
+          setConversionStatus('❌ Upload failed.');
         }
-        .status {
-          background: #fff;
-          border-radius: 10px;
-          padding: 20px;
-          display: inline-block;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-        .status h1 {
-          color: green;
-        }
-        .info {
-          margin-top: 10px;
-          font-size: 0.9em;
-          color: #666;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="status">
-        <h1>✅ Backend is Live!</h1>
-        <p>Express server is up and running on Render.</p>
-        <div class="info">URL: <code>https://prime-video-backend.onrender.com</code></div>
-      </div>
-    </body>
-    </html>
-  `);
-});
+      }
+    };
 
+    xhr.send(formData);
+  };
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server is running on http://localhost:${PORT}`);
-});
+  return (
+    <div style={{ textAlign: 'center', paddingTop: '40px', fontFamily: 'Arial' }}>
+      <h1>🎬 Prime Video Player Demo</h1>
+
+      <input type="file" accept="video/*" onChange={handleFileChange} />
+
+      {uploading && (
+        <div style={{ marginTop: '20px' }}>
+          <p>Uploading: {uploadProgress}%</p>
+          <progress value={uploadProgress} max="100" style={{ width: '300px' }} />
+        </div>
+      )}
+
+      {uploadComplete && (
+        <div style={{ marginTop: '20px', fontWeight: 'bold' }}>
+          <p>{conversionStatus}</p>
+        </div>
+      )}
+
+      {videoPath && (
+        <div style={{ marginTop: '30px' }}>
+          <video width="720" height="480" controls>
+            <source src={videoPath} type="application/x-mpegURL" />
+            Your browser does not support the video tag.
+          </video>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default App;
