@@ -1,39 +1,18 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import multer from 'multer';
-import path from 'path';
 import fs from 'fs';
-import ffmpeg from 'fluent-ffmpeg';
+import path from 'path';
+import { spawn } from 'child_process';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Vercel frontend origin (update to your deployed domain)
-const FRONTEND_ORIGIN = 'https://frontend-mu-two-39.vercel.app';
-
-// Create folders if they don't exist
-const ensureDir = (dir: string) => {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-};
-
-ensureDir(path.join(__dirname, 'uploads'));
-ensureDir(path.join(__dirname, 'videos'));
-ensureDir(path.join(__dirname, 'public', 'thumbnails'));
-
 // Middleware
-app.use(cors({
-  origin: FRONTEND_ORIGIN,
-  methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type']
-}));
+app.use(cors());
+app.use(express.json());
 
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ extended: true, limit: '100mb' }));
-
-// File upload
-const upload = multer({ dest: 'uploads/' });
-
-// Serve HLS files
+// Static file serving
 app.use('/videos', express.static(path.join(__dirname, 'videos'), {
   setHeaders: (res, filePath) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -45,78 +24,67 @@ app.use('/videos', express.static(path.join(__dirname, 'videos'), {
   }
 }));
 
-// Serve thumbnails
 app.use('/thumbnails', express.static(path.join(__dirname, 'public', 'thumbnails')));
 
-// Upload handler
+// Multer setup
+const upload = multer({ dest: 'uploads/' });
+
+// POST /upload
 app.post('/upload', upload.single('video'), async (req: Request, res: Response) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No video file uploaded' });
   }
 
   const inputPath = req.file.path;
-  const fileNameNoExt = path.parse(req.file.originalname).name.replace(/\s+/g, '_');
-  const safeFileName = fileNameNoExt.replace(/[^a-zA-Z0-9-_]/g, '');
+  const originalName = path.parse(req.file.originalname).name;
+  const safeFileName = originalName.replace(/[^a-zA-Z0-9-_]/g, '_');
   const outputDir = path.join(__dirname, 'videos', safeFileName);
+  const outputM3U8 = path.join(outputDir, 'index.m3u8');
+  const segmentPattern = path.join(outputDir, 'segment_%03d.ts');
   const thumbnailPath = path.join(__dirname, 'public', 'thumbnails', `${safeFileName}.jpg`);
-  const m3u8Path = path.join(outputDir, 'index.m3u8');
 
   try {
     fs.mkdirSync(outputDir, { recursive: true });
 
-    console.log(`🎥 Starting HLS conversion for: ${req.file.originalname}`);
+    const ffmpeg = spawn('ffmpeg', [
+      '-i', inputPath,
+      '-codec:v', 'libx264',
+      '-codec:a', 'aac',
+      '-start_number', '0',
+      '-hls_time', '10',
+      '-hls_list_size', '0',
+      '-hls_segment_filename', segmentPattern,
+      '-f', 'hls',
+      outputM3U8
+    ]);
 
-    ffmpeg(inputPath)
-      .output(m3u8Path)
-      .addOptions([
-        '-preset veryfast',
-        '-g 48',
-        '-sc_threshold 0',
-        '-hls_time 10',
-        '-hls_list_size 0',
-        '-hls_segment_filename', path.join(outputDir, 'segment_%03d.ts'),
-        '-f hls'
-      ])
-      .videoCodec('libx264')
-      .audioCodec('aac')
-      .outputOptions('-crf 20')
-      .on('start', command => console.log('🔧 FFmpeg command:', command))
-      .on('end', () => {
-        console.log('✅ HLS conversion complete.');
+    ffmpeg.stderr.on('data', (data) => {
+      console.error(`FFmpeg error: ${data}`);
+    });
 
-        // Attempt to generate thumbnail
-        ffmpeg(inputPath)
-          .screenshots({
-            count: 1,
-            filename: `${safeFileName}.jpg`,
-            folder: path.join(__dirname, 'public', 'thumbnails'),
-            size: '640x360'
-          })
-          .on('end', () => {
-            console.log('📸 Thumbnail created.');
-            res.json({
-              message: 'Upload and processing successful',
-              streamUrl: `/videos/${safeFileName}/index.m3u8`,
-              thumbnailUrl: `/thumbnails/${safeFileName}.jpg`
-            });
-          })
-          .on('error', err => {
-            console.warn('⚠️ Thumbnail failed:', err.message);
-            res.json({
-              message: 'Upload and processing successful (thumbnail skipped)',
-              streamUrl: `/videos/${safeFileName}/index.m3u8`
-            });
-          });
+    ffmpeg.on('close', (code) => {
+      fs.unlinkSync(inputPath); // Cleanup uploaded file
 
-      })
-      .on('error', (err) => {
-        console.error('❌ FFmpeg error:', err.message);
-        return res.status(500).json({ error: 'Failed to convert video to HLS format' });
-      })
-      .run();
+      if (code === 0) {
+        const streamUrl = `/videos/${safeFileName}/index.m3u8`;
+        const thumbnailUrl = `/thumbnails/${safeFileName}.jpg`;
+
+        // Generate thumbnail
+        spawn('ffmpeg', [
+          '-i', outputM3U8,
+          '-ss', '00:00:01.000',
+          '-vframes', '1',
+          thumbnailPath
+        ]);
+
+        res.status(200).json({ streamUrl, thumbnailUrl });
+      } else {
+        res.status(500).json({ error: 'FFmpeg failed to convert video.' });
+      }
+    });
 
   } catch (err: any) {
-    console.error('❌ Upload error:', err.message);
+    console.error('Upload error:', err.message);
     res.status(500).json({ error: 'Upload processing failed' });
   }
 });
