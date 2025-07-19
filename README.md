@@ -1,251 +1,144 @@
-prime-video-test-automation-player
+# 🎬 Prime Video Test Automation Player
 
-# Prime Video Test Automation Project
-===
+A full-stack video uploader and HLS streaming platform.
 
-# 
+- Upload a video file
+- Convert it to HLS (`.m3u8` and `.ts` segments) using FFmpeg
+- Auto-generate a thumbnail
+- Play the video with a React + Vite video player
 
-# This project simulates a simplified version of the video upload and streaming pipeline you'd expect in a media engineering or SDET role at a company like Amazon Prime Video.
+🌐 **Live Site**: [https://frontend-mu-two-39.vercel.app/](https://frontend-mu-two-39.vercel.app/)
 
-# 
+---
 
-# It includes:
+## 🔧 Tech Stack
 
-# \- A \*\*TypeScript + Express.js backend\*\* for handling video uploads
+- **Frontend**: React + TypeScript + Vite → [Deployed to Vercel](https://frontend-mu-two-39.vercel.app/)
+- **Backend**: Node.js + Express + FFmpeg → Deployed to Render
+- **Video Processing**: FFmpeg for HLS and thumbnail generation
+- **Uploads**: Multer
+- **Streaming**: HLS (`.m3u8`) served with CORS headers
 
-# \- \*\*FFmpeg integration\*\* for converting `.mp4` files to HLS (`.m3u8 + .ts`)
+---
 
-# \- A \*\*React + TypeScript frontend\*\* (in progress) for uploading and playing the video
+## 📁 Folder Structure
 
-# \- Project structure optimized for test automation, scalability, and future CI/CD
+```
+prime-video-test-automation-player/
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx
+│   │   ├── VideoPlayer.tsx
+│   │   └── ...
+│   ├── vite.config.ts
+│   └── .env                # VITE_API_BASE_URL
+│
+├── backend/
+│   ├── server.ts
+│   ├── tsconfig.json
+│   └── ...
+└── README.md
+```
 
-# 
+---
 
-# ---
+## ⚙️ Environment Variables
 
-# 
+### Frontend (`frontend/.env`)
+```
+VITE_API_BASE_URL=https://your-backend-on-render.com
+```
 
-# \## 📁 Project Structure
+### Backend (Render)
+Set the following Render environment variables:
 
-# 
+| Key       | Value         |
+|-----------|---------------|
+| `PORT`    | 5000          |
+| `NODE_ENV`| production    |
 
-# ```
+---
 
-# prime-video-test-automation-player/
+## 🧠 TypeScript Fix for Vite
 
-# ├── backend/              # Node.js + TypeScript server with FFmpeg \& Multer
+Add this to `frontend/tsconfig.json`:
 
-# │   └── server.ts
+```json
+{
+  "compilerOptions": {
+    "types": ["vite/client"]
+  }
+}
+```
 
-# ├── frontend/             # React app (TypeScript)
+---
 
-# │   └── src/
+## 🏃 Local Development
 
-# │       ├── components/
+### Backend (Express + FFmpeg)
 
-# │       │   └── VideoPlayer.tsx
+```bash
+cd backend
+npm install
+npx ts-node server.ts
+```
 
-# ├── tests/                # Test automation scripts (coming soon)
+### Frontend (Vite + React)
 
-# ├── scripts/              # Helper or FFmpeg automation scripts
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-# ├── docs/                 # Architecture diagrams, notes, planning
+Visit: [http://localhost:5173](http://localhost:5173)
 
-# └── README.md
+---
 
-# ```
+## 📤 Upload Workflow
 
-# 
+1. Select a `.mp4`, `.mov`, or other video file
+2. Frontend sends it to backend via `POST /upload`
+3. Backend:
+   - Uses FFmpeg to convert to HLS
+   - Generates a `.jpg` thumbnail
+   - Responds with HLS and thumbnail paths
+4. Video is streamed in the browser
 
-# ---
+---
 
-# 
+## ✅ Sample Output
 
-# \## ⚙️ Backend Setup (Node + TypeScript)
+- HLS: `/videos/your-file/index.m3u8`
+- Thumbnail: `/thumbnails/your-file.jpg`
 
-# 
+---
 
-# 1\. \*\*Navigate to the backend folder:\*\*
+## 🚀 Deployment
 
-# &nbsp;  ```bash
+- **Frontend**: Vercel  
+  🔗 https://frontend-mu-two-39.vercel.app/
+- **Backend**: Render  
+  ⚙️ Make sure Render supports FFmpeg in your runtime
 
-# &nbsp;  cd backend
+---
 
-# &nbsp;  ```
+## 📌 To Do
 
-# 2\. \*\*Install dependencies:\*\*
+- Upload progress
+- Auth
+- Persistent database (e.g. Supabase, MongoDB)
+- Edit metadata
 
-# &nbsp;  ```bash
+---
 
-# &nbsp;  npm install express cors multer
+## 👨‍💻 Author
 
-# &nbsp;  npm install --save-dev typescript ts-node @types/node @types/express @types/multer @types/cors
+Erick Esquilin  
+[Portfolio](https://erick-esquilin-portfolio.vercel.app/)
 
-# &nbsp;  ```
+---
 
-# 3\. \*\*Initialize TypeScript:\*\*
+## 📄 License
 
-# &nbsp;  ```bash
-
-# &nbsp;  npx tsc --init
-
-# &nbsp;  ```
-
-# 4\. \*\*Run the server:\*\*
-
-# &nbsp;  ```bash
-
-# &nbsp;  npx ts-node server.ts
-
-# &nbsp;  ```
-
-# 
-
-# \- Server runs at: `http://localhost:5000`
-
-# \- Upload video via POST: `http://localhost:5000/upload`
-
-# \- Returned HLS stream: `http://localhost:5000/videos/<file-id>/index.m3u8`
-
-# 
-
-# ---
-
-# 
-
-# \## 📦 Frontend Setup (React + TypeScript)
-
-# 
-
-# 1\. \*\*Navigate to frontend folder:\*\*
-
-# &nbsp;  ```bash
-
-# &nbsp;  cd frontend
-
-# &nbsp;  ```
-
-# 2\. \*\*Create React App in-place:\*\*
-
-# &nbsp;  ```bash
-
-# &nbsp;  npx create-react-app . --template typescript
-
-# &nbsp;  ```
-
-# 3\. \*\*Install Video.js:\*\*
-
-# &nbsp;  ```bash
-
-# &nbsp;  npm install video.js
-
-# &nbsp;  ```
-
-# 4\. \*\*Use `VideoPlayer.tsx` component\*\* in `App.tsx`:
-
-# &nbsp;  ```tsx
-
-# &nbsp;  import VideoPlayer from './components/VideoPlayer';
-
-# &nbsp;  // pass m3u8 URL to <VideoPlayer src="..." />
-
-# &nbsp;  ```
-
-# 
-
-# ---
-
-# 
-
-# \## ✅ Features Implemented
-
-# 
-
-# \- \[x] Multer upload handling
-
-# \- \[x] FFmpeg `.mp4` → HLS (`.m3u8`)
-
-# \- \[x] Static file serving for HLS
-
-# \- \[x] React + TypeScript frontend scaffolded
-
-# \- \[x] GitHub version control
-
-# 
-
-# ---
-
-# 
-
-# \## 📌 Next Steps
-
-# 
-
-# \- \[ ] Create `UploadForm.tsx` to POST video from UI
-
-# \- \[ ] Add test automation with Selenium or Playwright
-
-# \- \[ ] Add CI/CD using GitHub Actions
-
-# \- \[ ] Add GenAI-based test generation demo (for SDET role alignment)
-
-# 
-
-# ---
-
-# 
-
-# \## 🔗 Useful URLs
-
-# 
-
-# \- Backend: `http://localhost:5000`
-
-# \- Upload endpoint: `POST /upload`
-
-# \- Video stream: `GET /videos/{id}/index.m3u8`
-
-# 
-
-# ---
-
-# 
-
-# \## 👤 Author
-
-# 
-
-# Erick Esquilin – aspiring media engineer / SDET
-
-# 
-
-# 📂 GitHub repo: \[prime-video-test-automation-player](https://github.com/mrgbpjpy/prime-video-test-automation-player)
-
-# 
-
-# ---
-
-# 
-
-# \## 🛠 Tools Used
-
-# 
-
-# \- Node.js
-
-# \- Express
-
-# \- TypeScript
-
-# \- FFmpeg
-
-# \- React.js
-
-# \- Video.js
-
-# \- Multer
-
-# \- ts-node
-
-
-
+MIT
