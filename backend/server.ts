@@ -1,27 +1,42 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import multer from 'multer';
-import fs from 'fs';
 import path from 'path';
-import { spawn } from 'child_process';
+import fs from 'fs';
+import ffmpeg from 'fluent-ffmpeg';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Enable CORS for all routes and static assets
-app.use(cors());
-app.use(express.json());
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  next();
-});
+// Vercel frontend origin (update to your deployed domain)
+const FRONTEND_ORIGIN = 'https://frontend-mu-two-39.vercel.app';
 
-// Upload config
+// Create folders if they don't exist
+const ensureDir = (dir: string) => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+};
+
+ensureDir(path.join(__dirname, 'uploads'));
+ensureDir(path.join(__dirname, 'videos'));
+ensureDir(path.join(__dirname, 'public', 'thumbnails'));
+
+// Middleware
+app.use(cors({
+  origin: FRONTEND_ORIGIN,
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type']
+}));
+
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+
+// File upload
 const upload = multer({ dest: 'uploads/' });
 
-// Serve /videos/ folder statically for .m3u8 and .ts files
+// Serve HLS files
 app.use('/videos', express.static(path.join(__dirname, 'videos'), {
   setHeaders: (res, filePath) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
     if (filePath.endsWith('.m3u8')) {
       res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
     } else if (filePath.endsWith('.ts')) {
@@ -30,64 +45,82 @@ app.use('/videos', express.static(path.join(__dirname, 'videos'), {
   }
 }));
 
-// Video upload + HLS processing
+// Serve thumbnails
+app.use('/thumbnails', express.static(path.join(__dirname, 'public', 'thumbnails')));
+
+// Upload handler
 app.post('/upload', upload.single('video'), async (req: Request, res: Response) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No video file uploaded' });
   }
 
   const inputPath = req.file.path;
-  const fileName = path.parse(req.file.originalname).name.replace(/\s+/g, '_');
-  const outputDir = path.join(__dirname, 'videos', fileName);
-  const outputM3U8 = path.join(outputDir, 'output.m3u8');
-  const segmentPattern = path.join(outputDir, 'output%d.ts');
+  const fileNameNoExt = path.parse(req.file.originalname).name.replace(/\s+/g, '_');
+  const safeFileName = fileNameNoExt.replace(/[^a-zA-Z0-9-_]/g, '');
+  const outputDir = path.join(__dirname, 'videos', safeFileName);
+  const thumbnailPath = path.join(__dirname, 'public', 'thumbnails', `${safeFileName}.jpg`);
+  const m3u8Path = path.join(outputDir, 'index.m3u8');
 
-  // Ensure output directory exists
-  fs.mkdirSync(outputDir, { recursive: true });
+  try {
+    fs.mkdirSync(outputDir, { recursive: true });
 
-  const ffmpeg = spawn('ffmpeg', [
-    '-i', inputPath,
-    '-codec:v', 'libx264',
-    '-codec:a', 'aac',
-    '-start_number', '0',
-    '-hls_time', '10',
-    '-hls_list_size', '0',
-    '-hls_segment_filename', segmentPattern, // critical for .ts segments
-    '-f', 'hls',
-    outputM3U8
-  ]);
+    console.log(`🎥 Starting HLS conversion for: ${req.file.originalname}`);
 
-  ffmpeg.stderr.on('data', (data) => {
-    console.error(`FFmpeg error: ${data}`);
-  });
+    ffmpeg(inputPath)
+      .output(m3u8Path)
+      .addOptions([
+        '-preset veryfast',
+        '-g 48',
+        '-sc_threshold 0',
+        '-hls_time 10',
+        '-hls_list_size 0',
+        '-hls_segment_filename', path.join(outputDir, 'segment_%03d.ts'),
+        '-f hls'
+      ])
+      .videoCodec('libx264')
+      .audioCodec('aac')
+      .outputOptions('-crf 20')
+      .on('start', command => console.log('🔧 FFmpeg command:', command))
+      .on('end', () => {
+        console.log('✅ HLS conversion complete.');
 
-  ffmpeg.on('exit', (code) => {
-    fs.unlinkSync(inputPath); // Cleanup uploaded raw file
+        // Attempt to generate thumbnail
+        ffmpeg(inputPath)
+          .screenshots({
+            count: 1,
+            filename: `${safeFileName}.jpg`,
+            folder: path.join(__dirname, 'public', 'thumbnails'),
+            size: '640x360'
+          })
+          .on('end', () => {
+            console.log('📸 Thumbnail created.');
+            res.json({
+              message: 'Upload and processing successful',
+              streamUrl: `/videos/${safeFileName}/index.m3u8`,
+              thumbnailUrl: `/thumbnails/${safeFileName}.jpg`
+            });
+          })
+          .on('error', err => {
+            console.warn('⚠️ Thumbnail failed:', err.message);
+            res.json({
+              message: 'Upload and processing successful (thumbnail skipped)',
+              streamUrl: `/videos/${safeFileName}/index.m3u8`
+            });
+          });
 
-    if (code === 0) {
-      const streamUrl = `/videos/${fileName}/output.m3u8`;
-      return res.status(200).json({ streamUrl });
-    } else {
-      return res.status(500).json({ error: 'FFmpeg failed to convert video.' });
-    }
-  });
+      })
+      .on('error', (err) => {
+        console.error('❌ FFmpeg error:', err.message);
+        return res.status(500).json({ error: 'Failed to convert video to HLS format' });
+      })
+      .run();
+
+  } catch (err: any) {
+    console.error('❌ Upload error:', err.message);
+    res.status(500).json({ error: 'Upload processing failed' });
+  }
 });
 
-// Health check route
-app.get('/', (req: Request, res: Response) => {
-  res.send(`
-    <html>
-      <head><title>Backend Status</title></head>
-      <body style="font-family:sans-serif; text-align:center; padding:40px;">
-        <h1>✅ Backend is Live!</h1>
-        <p>Video HLS server running on Render.</p>
-        <p><code>GET /</code> and <code>POST /upload</code> endpoints available.</p>
-      </body>
-    </html>
-  `);
-});
-
-// Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server is running on http://localhost:${PORT}`);
+  console.log(`🚀 Backend running at http://localhost:${PORT}`);
 });
