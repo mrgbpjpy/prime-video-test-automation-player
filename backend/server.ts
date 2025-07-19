@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// Static file serving
+// Serve static HLS video files
 app.use('/videos', express.static(path.join(__dirname, 'videos'), {
   setHeaders: (res, filePath) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -24,12 +24,39 @@ app.use('/videos', express.static(path.join(__dirname, 'videos'), {
   }
 }));
 
+// Serve thumbnails
 app.use('/thumbnails', express.static(path.join(__dirname, 'public', 'thumbnails')));
 
-// Multer setup
+// Serve HTML on /
+app.get('/', (req: Request, res: Response) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Prime Video Backend Server</title>
+      <style>
+        body { font-family: Arial; text-align: center; margin-top: 40px; background-color: #f4f4f4; }
+        input { margin: 20px auto; display: block; }
+        video { width: 80%; margin-top: 20px; }
+        img { margin-top: 10px; border: 2px solid #000; }
+      </style>
+    </head>
+    <body>
+      <h1>🚀 Prime Video Server is Running</h1>
+      <form enctype="multipart/form-data" method="post" action="/upload">
+        <input type="file" name="video" accept="video/*" required />
+        <button type="submit">Upload</button>
+      </form>
+      <p>Upload a video to stream it as HLS!</p>
+    </body>
+    </html>
+  `);
+});
+
+// Multer for file uploads
 const upload = multer({ dest: 'uploads/' });
 
-// POST /upload
+// Upload endpoint
 app.post('/upload', upload.single('video'), async (req: Request, res: Response) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No video file uploaded' });
@@ -63,12 +90,9 @@ app.post('/upload', upload.single('video'), async (req: Request, res: Response) 
     });
 
     ffmpeg.on('close', (code) => {
-      fs.unlinkSync(inputPath); // Cleanup uploaded file
+      fs.unlinkSync(inputPath); // Cleanup
 
       if (code === 0) {
-        const streamUrl = `/videos/${safeFileName}/index.m3u8`;
-        const thumbnailUrl = `/thumbnails/${safeFileName}.jpg`;
-
         // Generate thumbnail
         spawn('ffmpeg', [
           '-i', outputM3U8,
@@ -77,15 +101,37 @@ app.post('/upload', upload.single('video'), async (req: Request, res: Response) 
           thumbnailPath
         ]);
 
-        res.status(200).json({ streamUrl, thumbnailUrl });
+        const streamUrl = `/videos/${safeFileName}/index.m3u8`;
+        const thumbUrl = `/thumbnails/${safeFileName}.jpg`;
+
+        res.send(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Upload Successful</title>
+            <style>
+              body { font-family: Arial; text-align: center; margin-top: 40px; background-color: #f0f0f0; }
+              video { width: 80%; margin-top: 20px; }
+              img { margin-top: 10px; border: 2px solid #000; }
+            </style>
+          </head>
+          <body>
+            <h2>✅ Upload Successful</h2>
+            <video controls src="${streamUrl}" poster="${thumbUrl}"></video>
+            <p><strong>Thumbnail:</strong></p>
+            <img src="${thumbUrl}" width="300" />
+            <br><br>
+            <a href="/">Upload Another</a>
+          </body>
+          </html>
+        `);
       } else {
-        res.status(500).json({ error: 'FFmpeg failed to convert video.' });
+        res.status(500).send('FFmpeg failed to convert video.');
       }
     });
-
   } catch (err: any) {
-    console.error('Upload error:', err.message);
-    res.status(500).json({ error: 'Upload processing failed' });
+    console.error('❌ Upload error:', err.message);
+    res.status(500).send('Upload processing failed.');
   }
 });
 
