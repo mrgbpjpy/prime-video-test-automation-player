@@ -1,64 +1,119 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import multer from 'multer';
-import path from 'path';
 import fs from 'fs';
+import path from 'path';
 import { spawn } from 'child_process';
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
+// Enable CORS
 app.use(cors());
 app.use(express.json());
 
-// Setting up Multer for file uploads
+// Set up Multer for file uploads
 const upload = multer({ dest: 'uploads/' });
 
-// Serve processed videos statically
-app.use('/videos', express.static(path.join(__dirname, 'videos')));
+// Serve HLS output statically from /videos
+app.use('/videos', express.static(path.join(__dirname, 'videos'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.m3u8')) {
+      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+    } else if (filePath.endsWith('.ts')) {
+      res.setHeader('Content-Type', 'video/mp2t');
+    }
+  }
+}));
 
 // Upload endpoint
-app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
+app.post('/upload', upload.single('video'), async (req: Request, res: Response) => {
   if (!req.file) {
-    return res.status(400).json({ error: 'No file uploaded' });
+    return res.status(400).json({ error: 'No video file uploaded' });
   }
-  const { filename, path: inputPath } = req.file;
-  //const inputPath = req.file.path;
-  const outputDir = path.join(__dirname, 'videos', req.file.filename); // ✅ fixed from 'video' → 'videos'
+
+  const inputPath = req.file.path;
+  const fileNameNoExt = path.parse(req.file.originalname).name.replace(/\s+/g, '_');
+  const outputDir = path.join(__dirname, 'videos', fileNameNoExt);
+
+  // Create output directory
   fs.mkdirSync(outputDir, { recursive: true });
 
-    convertToHLS(inputPath, outputDir, () => {
-    const m3u8Url = `http://localhost:${PORT}/videos/${filename}/index.m3u8`;
-    res.json({ message: 'Upload and conversion successful', url: m3u8Url });
-  });
+  const outputM3U8 = path.join(outputDir, 'output.m3u8');
 
-});
-
-// Function to spawn FFmpeg for HLS conversion
-function convertToHLS(inputPath: string, outputDir: string, callback: () => void): void {
-  const args = [
+  // FFmpeg HLS conversion
+  const ffmpeg = spawn('ffmpeg', [
     '-i', inputPath,
-    '-codec', 'copy',
+    '-codec:v', 'libx264',
+    '-codec:a', 'aac',
+    '-strict', 'experimental',
     '-start_number', '0',
     '-hls_time', '10',
     '-hls_list_size', '0',
     '-f', 'hls',
-    path.join(outputDir, 'index.m3u8'),
-  ];
+    outputM3U8
+  ]);
 
-  const ffmpeg = spawn('ffmpeg', args);
+  ffmpeg.stderr.on('data', (data) => {
+    console.error(`FFmpeg error: ${data}`);
+  });
 
-  ffmpeg.stderr.on('data', (data) => console.error(`FFmpeg error: ${data}`));
-
-  ffmpeg.on('close', (code) => {
+  ffmpeg.on('exit', (code) => {
     if (code === 0) {
-      console.log('✅ HLS conversion completed.');
-      callback();
+      const streamUrl = `/videos/${fileNameNoExt}/output.m3u8`;
+      const thumbnailUrl = ''; // Optional
+      return res.status(200).json({ streamUrl, thumbnailUrl });
     } else {
-      console.error(`❌ FFmpeg exited with code ${code}`);
+      return res.status(500).json({ error: 'FFmpeg failed to process video' });
     }
   });
-}
+});
+
+// ✅ Root GET route to verify backend is live
+app.get('/', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>Backend Status</title>
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          background: #f5f5f5;
+          color: #333;
+          text-align: center;
+          padding: 50px;
+        }
+        .status {
+          background: #fff;
+          border-radius: 10px;
+          padding: 20px;
+          display: inline-block;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        .status h1 {
+          color: green;
+        }
+        .info {
+          margin-top: 10px;
+          font-size: 0.9em;
+          color: #666;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="status">
+        <h1>✅ Backend is Live!</h1>
+        <p>Express server is up and running on Render.</p>
+        <div class="info">URL: <code>https://prime-video-backend.onrender.com</code></div>
+      </div>
+    </body>
+    </html>
+  `);
+});
+
 
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on http://localhost:${PORT}`);
