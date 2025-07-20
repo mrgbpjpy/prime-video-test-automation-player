@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ✅ Create required directories if they don't exist
+// ✅ Create required directories if missing
 const requiredDirs = ['uploads', 'videos', 'thumbnails', 'public'];
 requiredDirs.forEach((dir) => {
   const fullPath = path.join(__dirname, dir);
@@ -18,30 +18,30 @@ requiredDirs.forEach((dir) => {
   }
 });
 
-// ✅ CORS configuration for frontend (Vercel domain)
+// ✅ CORS config for Vercel frontend
 app.use(cors({
-  origin: ['https://frontend-mu-two-39.vercel.app'],
+  origin: ['https://frontend-mu-two-39.vercel.app'], // production frontend
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type']
 }));
 
-// ❌ OLD (BROKEN): app.options(/(.*)/, cors()); → causes crash in Express 5
-// ✅ FIXED: Replaced RegExp route with '*' which is the correct syntax in Express 5
-app.options('*', cors()); // ✅ FIXED THIS LINE
+// ❌ OLD (BROKEN): app.options(/(.*)/, cors());
+// ✅ FIXED: Replaced RegExp with '*' for Express 5 compatibility
+app.options('*', cors()); // ✅ FIXED THIS LINE to prevent "path-to-regexp" error
 
-// ✅ Middleware setup
+// ✅ Middleware
 app.use(express.json());
 app.use('/videos', express.static(path.join(__dirname, 'videos')));
 app.use('/thumbnails', express.static(path.join(__dirname, 'thumbnails')));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ✅ Multer config for file uploads
+// ✅ Multer for file uploads
 const upload = multer({
   dest: path.join(__dirname, 'uploads'),
-  limits: { fileSize: 500 * 1024 * 1024 } // 500MB max
+  limits: { fileSize: 500 * 1024 * 1024 } // 500MB
 });
 
-// ✅ Health check route
+// ✅ Health check
 app.get('/', (_req: Request, res: Response) => {
   res.send(`
     <html>
@@ -51,10 +51,10 @@ app.get('/', (_req: Request, res: Response) => {
         <p>POST a video file to <code>/upload</code> for HLS conversion.</p>
       </body>
     </html>
-  `); // ✅ FIXED: ensured the template literal ends correctly here
+  `); // ✅ FIXED: Ensured this template literal is closed properly
 });
 
-// ✅ Video upload endpoint
+// ✅ Upload endpoint
 app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
@@ -104,7 +104,7 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
       thumbnail.stderr.on('data', (data) => console.log(`[Thumbnail] ${data}`));
 
       thumbnail.on('close', () => {
-        fs.unlinkSync(inputPath); // cleanup temp upload
+        fs.unlinkSync(inputPath); // delete uploaded temp file
         console.log('✅ Video converted and thumbnail created.');
 
         res.json({
@@ -120,7 +120,7 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
   }
 });
 
-// ✅ Launch the server
+// ✅ Start server
 app.listen(PORT, () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);
 });
