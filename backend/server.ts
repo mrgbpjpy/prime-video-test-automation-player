@@ -8,33 +8,32 @@ import { spawn } from 'child_process';
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-const allowedOrigins = [
-  'http://localhost:3000',
-  'https://frontend-mu-two-39.vercel.app'
-];
+const FRONTEND_ORIGIN = 'https://frontend-mu-two-39.vercel.app';
 
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error(`CORS error: ${origin} not allowed`));
-    }
-  },
-  credentials: true,
+  origin: FRONTEND_ORIGIN,
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
+
+app.options('*', cors({
+  origin: FRONTEND_ORIGIN,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 }));
 
 app.use(express.json());
 app.use('/videos', express.static(path.join(__dirname, 'videos')));
 app.use('/thumbnails', express.static(path.join(__dirname, 'thumbnails')));
 
-// Multer upload config
 const upload = multer({ dest: 'uploads/' });
 
-// Upload route
 app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', FRONTEND_ORIGIN);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
@@ -71,7 +70,6 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
   ffmpeg.on('close', (code) => {
     fs.unlinkSync(tempPath);
     if (code === 0) {
-      // Also generate thumbnail
       const thumbnail = spawn('ffmpeg', [
         '-i', path.join(outputDir, 'index.m3u8'),
         '-ss', '00:00:02.000',
@@ -92,7 +90,14 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
   });
 });
 
-// Start server
+// Handle all other errors and still apply CORS headers
+app.use((err: Error, req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', FRONTEND_ORIGIN);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  console.error('❌ Server error:', err.message);
+  res.status(500).json({ error: err.message });
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on http://localhost:${PORT}`);
 });
