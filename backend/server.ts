@@ -1,140 +1,108 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import multer from 'multer';
-import fs from 'fs';
 import path from 'path';
+import fs from 'fs';
 import { spawn } from 'child_process';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-
-// Serve static HLS video files
-app.use('/videos', express.static(path.join(__dirname, 'videos'), {
-  setHeaders: (res, filePath) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    if (filePath.endsWith('.m3u8')) {
-      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-    } else if (filePath.endsWith('.ts')) {
-      res.setHeader('Content-Type', 'video/mp2t');
-    }
-  }
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type']
 }));
 
-// Serve thumbnails
-app.use('/thumbnails', express.static(path.join(__dirname, 'public', 'thumbnails')));
+app.options('*', cors()); // Enable preflight requests
 
-// Serve HTML on /
+app.use(express.json());
+app.use(express.static('public'));
+
+// Serve videos and thumbnails
+app.use('/videos', express.static(path.join(__dirname, 'videos')));
+app.use('/thumbnails', express.static(path.join(__dirname, 'thumbnails')));
+
+// Ensure upload and output directories exist
+['uploads', 'videos', 'thumbnails'].forEach(dir => {
+  const fullPath = path.join(__dirname, dir);
+  if (!fs.existsSync(fullPath)) fs.mkdirSync(fullPath);
+});
+
+// Multer upload setup (max file size ~500MB)
+const upload = multer({
+  dest: path.join(__dirname, 'uploads'),
+  limits: { fileSize: 500 * 1024 * 1024 }
+});
+
+// Homepage route (for server test)
 app.get('/', (req: Request, res: Response) => {
   res.send(`
-    <!DOCTYPE html>
     <html>
-    <head>
-      <title>Prime Video Backend Server</title>
-      <style>
-        body { font-family: Arial; text-align: center; margin-top: 40px; background-color: #f4f4f4; }
-        input { margin: 20px auto; display: block; }
-        video { width: 80%; margin-top: 20px; }
-        img { margin-top: 10px; border: 2px solid #000; }
-      </style>
-    </head>
-    <body>
-      <h1>🚀 Prime Video Server is Running</h1>
-      <form enctype="multipart/form-data" method="post" action="/upload">
-        <input type="file" name="video" accept="video/*" required />
-        <button type="submit">Upload</button>
-      </form>
-      <p>Upload a video to stream it as HLS!</p>
-    </body>
+      <head><title>Prime Video Backend</title></head>
+      <body style="font-family:sans-serif;padding:40px;">
+        <h1>🚀 Prime Video Backend Server</h1>
+        <p>Backend is running on port <b>${PORT}</b>.</p>
+        <p>POST your videos to <code>/upload</code> to convert them to HLS.</p>
+      </body>
     </html>
   `);
 });
 
-// Multer for file uploads
-const upload = multer({ dest: 'uploads/' });
-
-// Upload endpoint
+// Upload + FFmpeg conversion route
 app.post('/upload', upload.single('video'), async (req: Request, res: Response) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'No video file uploaded' });
-  }
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
   const inputPath = req.file.path;
-  const originalName = path.parse(req.file.originalname).name;
-  const safeFileName = originalName.replace(/[^a-zA-Z0-9-_]/g, '_');
-  const outputDir = path.join(__dirname, 'videos', safeFileName);
-  const outputM3U8 = path.join(outputDir, 'index.m3u8');
-  const segmentPattern = path.join(outputDir, 'segment_%03d.ts');
-  const thumbnailPath = path.join(__dirname, 'public', 'thumbnails', `${safeFileName}.jpg`);
+  const baseName = path.parse(req.file.originalname).name.replace(/\s+/g, '_');
+  const outputDir = path.join(__dirname, 'videos', baseName);
+  const thumbnailPath = path.join(__dirname, 'thumbnails', `${baseName}.jpg`);
 
-  try {
-    fs.mkdirSync(outputDir, { recursive: true });
+  // Create output dir
+  fs.mkdirSync(outputDir, { recursive: true });
 
-    const ffmpeg = spawn('ffmpeg', [
+  // FFmpeg command to convert to HLS and generate thumbnail
+  const ffmpeg = spawn('ffmpeg', [
+    '-i', inputPath,
+    '-vf', 'scale=w=360:h=640:force_original_aspect_ratio=decrease',
+    '-c:a', 'aac',
+    '-c:v', 'libx264',
+    '-preset', 'veryfast',
+    '-f', 'hls',
+    '-hls_time', '4',
+    '-hls_list_size', '0',
+    '-hls_segment_filename', path.join(outputDir, 'segment_%03d.ts'),
+    path.join(outputDir, 'index.m3u8'),
+    '-y' // Overwrite
+  ]);
+
+  ffmpeg.stderr.on('data', data => console.log(`[FFmpeg] ${data}`));
+
+  ffmpeg.on('close', (code) => {
+    if (code !== 0) {
+      console.error('FFmpeg failed');
+      return res.status(500).json({ error: 'Video conversion failed' });
+    }
+
+    // Generate thumbnail
+    spawn('ffmpeg', [
       '-i', inputPath,
-      '-codec:v', 'libx264',
-      '-codec:a', 'aac',
-      '-start_number', '0',
-      '-hls_time', '10',
-      '-hls_list_size', '0',
-      '-hls_segment_filename', segmentPattern,
-      '-f', 'hls',
-      outputM3U8
-    ]);
+      '-ss', '00:00:01',
+      '-vframes', '1',
+      thumbnailPath,
+      '-y'
+    ]).on('close', () => {
+      fs.unlinkSync(inputPath); // delete original upload
 
-    ffmpeg.stderr.on('data', (data) => {
-      console.error(`FFmpeg error: ${data}`);
+      res.json({
+        streamUrl: `/videos/${baseName}/index.m3u8`,
+        thumbnailUrl: `/thumbnails/${baseName}.jpg`
+      });
     });
-
-    ffmpeg.on('close', (code) => {
-      fs.unlinkSync(inputPath); // Cleanup
-
-      if (code === 0) {
-        // Generate thumbnail
-        spawn('ffmpeg', [
-          '-i', outputM3U8,
-          '-ss', '00:00:01.000',
-          '-vframes', '1',
-          thumbnailPath
-        ]);
-
-        const streamUrl = `/videos/${safeFileName}/index.m3u8`;
-        const thumbUrl = `/thumbnails/${safeFileName}.jpg`;
-
-        res.send(`
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>Upload Successful</title>
-            <style>
-              body { font-family: Arial; text-align: center; margin-top: 40px; background-color: #f0f0f0; }
-              video { width: 80%; margin-top: 20px; }
-              img { margin-top: 10px; border: 2px solid #000; }
-            </style>
-          </head>
-          <body>
-            <h2>✅ Upload Successful</h2>
-            <video controls src="${streamUrl}" poster="${thumbUrl}"></video>
-            <p><strong>Thumbnail:</strong></p>
-            <img src="${thumbUrl}" width="300" />
-            <br><br>
-            <a href="/">Upload Another</a>
-          </body>
-          </html>
-        `);
-      } else {
-        res.status(500).send('FFmpeg failed to convert video.');
-      }
-    });
-  } catch (err: any) {
-    console.error('❌ Upload error:', err.message);
-    res.status(500).send('Upload processing failed.');
-  }
+  });
 });
 
+// Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Backend running at http://localhost:${PORT}`);
+  console.log(`✅ Server is running at http://localhost:${PORT}`);
 });
