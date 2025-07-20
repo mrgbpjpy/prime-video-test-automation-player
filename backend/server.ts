@@ -8,20 +8,39 @@ import { spawn } from 'child_process';
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-const FRONTEND_ORIGIN = 'https://frontend-mu-two-39.vercel.app';
+// Define allowed origins
+const ALLOWED_ORIGINS = [
+  'https://frontend-mu-two-39.vercel.app',
+  'http://localhost:3001',
+];
 
+// CORS middleware configuration
 app.use(cors({
-  origin: FRONTEND_ORIGIN,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (e.g., non-browser clients like curl)
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+      callback(null, origin || '*');
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  credentials: true,
 }));
 
+// Handle preflight requests
 app.options('*', cors({
-  origin: FRONTEND_ORIGIN,
+  origin: (origin, callback) => {
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+      callback(null, origin || '*');
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  credentials: true,
 }));
 
 app.use(express.json());
@@ -31,8 +50,12 @@ app.use('/thumbnails', express.static(path.join(__dirname, 'thumbnails')));
 const upload = multer({ dest: 'uploads/' });
 
 app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
-  res.setHeader('Access-Control-Allow-Origin', FRONTEND_ORIGIN);
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  // Set CORS headers manually for this route (optional, as middleware handles it)
+  const origin = req.get('origin');
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
 
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
@@ -64,7 +87,7 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
     '-hls_time', '10',
     '-hls_playlist_type', 'vod',
     '-f', 'hls',
-    outputPath
+    outputPath,
   ]);
 
   ffmpeg.on('close', (code) => {
@@ -82,7 +105,7 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
       '-i', path.join(outputDir, 'index.m3u8'),
       '-ss', '00:00:02.000',
       '-vframes', '1',
-      thumbnailPath
+      thumbnailPath,
     ]);
 
     thumbnail.on('close', (thumbnailCode) => {
@@ -90,7 +113,7 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
         return res.json({
           message: 'Upload and processing successful',
           streamUrl: `/videos/${baseFilename}/index.m3u8`,
-          thumbnailUrl: `/thumbnails/${baseFilename}.jpg`
+          thumbnailUrl: `/thumbnails/${baseFilename}.jpg`,
         });
       } else {
         return res.status(500).json({ error: 'FFmpeg thumbnail generation failed' });
@@ -114,13 +137,24 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
   });
 });
 
-// Error handling middleware with proper signature
+// Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  res.setHeader('Access-Control-Allow-Origin', FRONTEND_ORIGIN);
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  console.error('❌ Server error:', err.message);
+  const origin = req.get('origin');
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+  console.error('❌ Server error:', err.message, err.stack);
   res.status(500).json({ error: 'Internal server error' });
-  next(); // Call next() to ensure middleware chain completes
+  next();
+});
+
+// Log registered routes for debugging
+console.log('Registered routes:');
+app._router.stack.forEach((r: any) => {
+  if (r.route && r.route.path) {
+    console.log(`Route: ${r.route.path}`);
+  }
 });
 
 app.listen(PORT, () => {
