@@ -24,7 +24,7 @@ app.use(cors({
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type']
 }));
-app.options('*', cors()); // For preflight requests
+app.options(/(.*)/, cors()); // For preflight requests (use regex instead of '*' for Express 5)
 
 // ✅ Middleware
 app.use(express.json());
@@ -40,7 +40,7 @@ const upload = multer({
 
 // ✅ Health Check
 app.get('/', (_req: Request, res: Response) => {
-  res.send(`
+  res.send(\`
     <html>
       <head><title>Prime Video Backend</title></head>
       <body style="font-family:sans-serif;padding:40px;">
@@ -48,7 +48,7 @@ app.get('/', (_req: Request, res: Response) => {
         <p>POST a video file to <code>/upload</code> for HLS conversion.</p>
       </body>
     </html>
-  `);
+  \`);
 });
 
 // ✅ Upload Endpoint
@@ -58,15 +58,15 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
   }
 
   const inputPath = req.file.path;
-  const baseName = path.parse(req.file.originalname).name.replace(/\s+/g, '_');
+  const baseName = path.parse(req.file.originalname).name.replace(/\\s+/g, '_');
   const outputDir = path.join(__dirname, 'videos', baseName);
-  const thumbnailPath = path.join(__dirname, 'thumbnails', `${baseName}.jpg`);
+  const thumbnailPath = path.join(__dirname, 'thumbnails', \`\${baseName}.jpg\`);
 
   try {
     fs.mkdirSync(outputDir, { recursive: true });
 
     const ffmpegArgs = [
-      '-y', // Overwrite output
+      '-y',
       '-i', inputPath,
       '-vf', 'scale=w=360:h=640:force_original_aspect_ratio=decrease',
       '-c:a', 'aac',
@@ -80,7 +80,7 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
     ];
 
     const convert = spawn('ffmpeg', ffmpegArgs);
-    convert.stderr.on('data', data => console.log(`[FFmpeg] ${data}`));
+    convert.stderr.on('data', data => console.log(\`[FFmpeg] \${data}\`));
 
     convert.on('close', code => {
       if (code !== 0) {
@@ -98,15 +98,15 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
       ];
 
       const thumbnail = spawn('ffmpeg', thumbArgs);
-      thumbnail.stderr.on('data', data => console.log(`[Thumbnail] ${data}`));
+      thumbnail.stderr.on('data', data => console.log(\`[Thumbnail] \${data}\`));
 
       thumbnail.on('close', () => {
         fs.unlinkSync(inputPath); // Clean up original upload
         console.log('✅ Video converted and thumbnail created.');
 
         res.json({
-          streamUrl: `/videos/${baseName}/index.m3u8`,
-          thumbnailUrl: `/thumbnails/${baseName}.jpg`
+          streamUrl: \`/videos/\${baseName}/index.m3u8\`,
+          thumbnailUrl: \`/thumbnails/\${baseName}.jpg\`
         });
       });
     });
@@ -119,5 +119,5 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
 
 // ✅ Start Server
 app.listen(PORT, () => {
-  console.log(`✅ Backend running at http://localhost:${PORT}`);
+  console.log(\`✅ Backend running at http://localhost:\${PORT}\`);
 });
