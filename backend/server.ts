@@ -18,29 +18,29 @@ requiredDirs.forEach((dir) => {
   }
 });
 
-// ✅ CORS setup: allow frontend hosted on Vercel
+// ✅ CORS configuration for frontend hosted on Vercel
 app.use(cors({
   origin: ['https://frontend-mu-two-39.vercel.app'],
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type']
 }));
 
-// ✅ FIXED: Express 5 route for preflight OPTIONS request
-app.options('/{*}', cors()); // Express 5 requires named wildcard not regex
+// ✅ FIXED: CORS preflight for Express 5 (avoid crash)
+app.options('*', cors()); // ✅ FIXED: Replaced '/{*}' with '*' to avoid path-to-regexp error
 
-// ✅ Middleware for parsing JSON and serving static assets
+// ✅ Middleware for JSON and static files
 app.use(express.json());
 app.use('/videos', express.static(path.join(__dirname, 'videos')));
 app.use('/thumbnails', express.static(path.join(__dirname, 'thumbnails')));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ✅ Multer setup for video uploads
+// ✅ File upload handling using Multer
 const upload = multer({
   dest: path.join(__dirname, 'uploads'),
-  limits: { fileSize: 500 * 1024 * 1024 } // 500MB limit
+  limits: { fileSize: 500 * 1024 * 1024 } // 500MB
 });
 
-// ✅ Basic health check route
+// ✅ Health check endpoint
 app.get('/', (_req: Request, res: Response) => {
   res.send(`
     <html>
@@ -53,7 +53,7 @@ app.get('/', (_req: Request, res: Response) => {
   `);
 });
 
-// ✅ Upload route: receives video, runs FFmpeg HLS + thumbnail
+// ✅ Upload route for processing video with FFmpeg
 app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
@@ -67,7 +67,6 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
   try {
     fs.mkdirSync(outputDir, { recursive: true });
 
-    // ✅ FFmpeg arguments for HLS conversion
     const ffmpegArgs = [
       '-y',
       '-i', inputPath,
@@ -91,7 +90,6 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
         return res.status(500).json({ error: 'HLS conversion failed' });
       }
 
-      // ✅ FFmpeg thumbnail generation
       const thumbArgs = [
         '-y',
         '-i', inputPath,
@@ -104,7 +102,7 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
       thumbnail.stderr.on('data', (data) => console.log(`[Thumbnail] ${data}`));
 
       thumbnail.on('close', () => {
-        fs.unlinkSync(inputPath); // ✅ Cleanup uploaded file
+        fs.unlinkSync(inputPath); // cleanup uploaded file
         console.log('✅ Video converted and thumbnail created.');
 
         res.json({
@@ -120,7 +118,7 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
   }
 });
 
-// ✅ Start server
+// ✅ Start the backend server
 app.listen(PORT, () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);
 });
