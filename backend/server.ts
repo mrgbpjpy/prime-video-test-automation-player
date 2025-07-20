@@ -16,7 +16,7 @@ app.use(cors({
 }));
 
 // ✅ Preflight requests for mobile Safari / iOS
-app.options('*', cors());
+app.options('/*splat', cors());
 
 app.use(express.json());
 
