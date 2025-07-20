@@ -1,38 +1,100 @@
 .App {
   text-align: center;
-}
-
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
-}
-
-.App-header {
-  background-color: #282c34;
+  padding: 20px;
+  font-family: Arial, sans-serif;
+  background-color: #f8f9fa;
   min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
+  box-sizing: border-box;
+}
+
+/* Make video player responsive */
+.video-wrapper {
+  width: 100%;
+  max-width: 800px;
+  margin: 20px auto;
+  aspect-ratio: 16 / 9;
+  background-color: black;
+  position: relative;
+}
+
+/* Video element responsiveness */
+.video-js,
+.video-js .vjs-tech,
+.video-js .vjs-poster {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+}
+
+.video-js .vjs-poster {
+  background-size: contain !important;
+  background-position: center center !important;
+  background-repeat: no-repeat !important;
+}
+
+input[type="file"] {
+  margin: 20px auto;
+  display: block;
+  font-size: 16px;
+}
+
+/* Progress bar styling */
+.progress-bar {
+  width: 90%;
+  height: 20px;
+  border: 1px solid #ccc;
+  background-color: #eee;
+  margin: 10px auto;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background-color: #4caf50;
   color: white;
+  text-align: center;
+  line-height: 20px;
+  transition: width 0.3s ease;
+  font-size: 14px;
 }
 
-.App-link {
-  color: #61dafb;
+/* Spinner fallback */
+.spinner-container {
+  margin-top: 20px;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
+/* Test log styling */
+@media (max-width: 600px) {
+  .video-wrapper {
+    width: 100%;
+    aspect-ratio: auto;
+    height: auto;
   }
-  to {
-    transform: rotate(360deg);
+
+  .progress-bar {
+    height: 16px;
+  }
+
+  .progress-bar-fill {
+    line-height: 16px;
+    font-size: 12px;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+  }
+
+  h2 {
+    font-size: 1.25rem;
+  }
+
+  input[type="file"] {
+    font-size: 14px;
+  }
+
+  .test-log {
+    font-size: 13px;
+    padding: 8px;
   }
 }

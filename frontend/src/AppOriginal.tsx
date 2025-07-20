@@ -4,86 +4,65 @@ import './App.css';
 
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000';
 
-function AppWithTestPreview() {
+function App() {
   const [videoUrl, setVideoUrl] = useState('');
   const [thumbnailUrl, setThumbnailUrl] = useState('');
   const [uploadKey, setUploadKey] = useState(0);
   const [status, setStatus] = useState('');
   const [progress, setProgress] = useState(0);
   const [uploading, setUploading] = useState(false);
-  const [testLog, setTestLog] = useState<string[]>([]);
-
-  const appendLog = (msg: string) => {
-    setTestLog(prev => [...prev, `TEST: ${msg}`]);
-  };
 
   const handleUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    appendLog(`User selected file: ${file.name}`);
-
+    // Reset state
     setVideoUrl('');
     setThumbnailUrl('');
     setUploadKey(prev => prev + 1);
     setStatus('Uploading...');
     setProgress(0);
     setUploading(true);
-    setTestLog([]);
-    appendLog('Uploading video to backend...');
 
     const formData = new FormData();
     formData.append('video', file);
 
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${API_BASE_URL}/upload`, true);
-    xhr.withCredentials = false;
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) {
         const percent = Math.round((e.loaded / e.total) * 100);
         setProgress(percent);
-        appendLog(`Upload progress: ${percent}%`);
       }
     };
 
     xhr.onloadstart = () => {
       setStatus('Uploading...');
-      appendLog('XHR upload started...');
+      setUploading(true);
     };
 
     xhr.onload = () => {
       if (xhr.status === 200) {
-        try {
-          const data = JSON.parse(xhr.responseText);
-          setStatus('Converting...');
-          setProgress(100);
-          appendLog('Upload complete. Backend is converting...');
+        setStatus('Converting...');
+        setProgress(100);
+        const data = JSON.parse(xhr.responseText);
 
-          setTimeout(() => {
-            setVideoUrl(`${API_BASE_URL}${data.streamUrl}`);
-            setThumbnailUrl(`${API_BASE_URL}${data.thumbnailUrl}`);
-            setStatus('Done');
-            setUploading(false);
-            appendLog('Conversion complete. Stream ready.');
-            appendLog('Test simulation complete.');
-          }, 1500);
-        } catch (err) {
-          setStatus('Failed to parse response');
+        setTimeout(() => {
+          setVideoUrl(`${API_BASE_URL}${data.streamUrl}`);
+          setThumbnailUrl(`${API_BASE_URL}${data.thumbnailUrl}`);
+          setStatus('✅ Done');
           setUploading(false);
-          appendLog('Failed to parse JSON response from backend.');
-        }
+        }, 1500); // Simulated conversion time
       } else {
-        setStatus(`Upload failed (${xhr.status})`);
+        setStatus('❌ Upload failed');
         setUploading(false);
-        appendLog(`Upload failed with status ${xhr.status}`);
       }
     };
 
     xhr.onerror = () => {
-      setStatus('Upload error');
+      setStatus('❌ Upload error');
       setUploading(false);
-      appendLog('Upload error (network or CORS issue)');
     };
 
     xhr.send(formData);
@@ -91,13 +70,7 @@ function AppWithTestPreview() {
 
   return (
     <div className="App">
-      <h1>Prime Video Player Demo</h1>
-<h2>Made By Erick Esquilin</h2>
-<h3>
-  Email:{' '}
-  <a href="mailto:mrgbpjpy@gmail.com">mrgbpjpy@gmail.com</a>
-</h3>
-
+      <h1>🎬 Prime Video Player Demo</h1>
       <input type="file" accept="video/*" onChange={handleUpload} />
 
       {uploading && (
@@ -116,25 +89,8 @@ function AppWithTestPreview() {
           <VideoPlayer key={uploadKey} src={videoUrl} poster={thumbnailUrl} />
         </div>
       )}
-
-      <div style={{ textAlign: 'left', maxWidth: 800, margin: '30px auto' }}>
-        <h2>Test Simulation Log</h2>
-        <div style={{
-          backgroundColor: '#111',
-          color: '#0f0',
-          fontFamily: 'monospace',
-          padding: '10px',
-          borderRadius: '5px',
-          minHeight: '150px',
-        }}>
-          {testLog.length === 0
-            ? <p>Waiting for test simulation...</p>
-            : testLog.map((log, idx) => <p key={idx}>{log}</p>)
-          }
-        </div>
-      </div>
     </div>
   );
 }
 
-export default AppWithTestPreview;
+export default App;
