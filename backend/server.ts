@@ -1,4 +1,3 @@
-// server.ts (Updated for Express 5, fixed TS1127 + TS1160)
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import multer from 'multer';
@@ -9,50 +8,52 @@ import { spawn } from 'child_process';
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Create required folders
+// ✅ Ensure necessary folders exist
 const requiredDirs = ['uploads', 'videos', 'thumbnails', 'public'];
 requiredDirs.forEach(dir => {
   const fullPath = path.join(__dirname, dir);
   if (!fs.existsSync(fullPath)) {
     fs.mkdirSync(fullPath, { recursive: true });
-    console.log(`Created folder: ${fullPath}`);
+    console.log(`✅ Created folder: ${fullPath}`);
   }
 });
 
-// CORS config (adjust for production)
+// ✅ Production-safe CORS
 app.use(cors({
-  origin: '*',
+  origin: ['https://frontend-mu-two-39.vercel.app'], // Vercel frontend
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type']
 }));
-app.options(/.*/, cors());
 
-// Middleware
+// ✅ Preflight OPTIONS support
+app.options('*', cors());
+
+// ✅ Middleware
 app.use(express.json());
 app.use('/videos', express.static(path.join(__dirname, 'videos')));
 app.use('/thumbnails', express.static(path.join(__dirname, 'thumbnails')));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Multer config
+// ✅ Multer for file uploads
 const upload = multer({
   dest: path.join(__dirname, 'uploads'),
-  limits: { fileSize: 500 * 1024 * 1024 } // 500MB
+  limits: { fileSize: 500 * 1024 * 1024 } // 500MB max
 });
 
-// Health Check
+// ✅ Health check route
 app.get('/', (_req: Request, res: Response) => {
   res.send(`
     <html>
       <head><title>Prime Video Backend</title></head>
       <body style="font-family:sans-serif;padding:40px;">
-        <h1>Prime Video Backend</h1>
+        <h1>🚀 Prime Video Backend</h1>
         <p>POST a video file to <code>/upload</code> for HLS conversion.</p>
       </body>
     </html>
   `);
 });
 
-// Upload Endpoint
+// ✅ Upload route
 app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
@@ -85,7 +86,7 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
 
     convert.on('close', code => {
       if (code !== 0) {
-        console.error('FFmpeg conversion failed.');
+        console.error('❌ FFmpeg conversion failed.');
         return res.status(500).json({ error: 'HLS conversion failed' });
       }
 
@@ -101,8 +102,8 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
       thumbnail.stderr.on('data', data => console.log(`[Thumbnail] ${data}`));
 
       thumbnail.on('close', () => {
-        fs.unlinkSync(inputPath);
-        console.log('Video converted and thumbnail created.');
+        fs.unlinkSync(inputPath); // cleanup
+        console.log('✅ Video converted and thumbnail created.');
 
         res.json({
           streamUrl: `/videos/${baseName}/index.m3u8`,
@@ -112,11 +113,11 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
     });
 
   } catch (err) {
-    console.error('Server error:', err);
+    console.error('❌ Server error:', err);
     res.status(500).json({ error: 'Server-side processing error' });
   }
 });
 
+// ✅ Start server
 app.listen(PORT, () => {
-  console.log(`Backend running at http://localhost:${PORT}`);
-});
+  console.log(`✅ Backend running at http://localhos
