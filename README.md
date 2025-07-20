@@ -1,5 +1,7 @@
 # 🎬 Prime Video Test Automation Player
 
+Live Project [Prime Video Player Demo](https://frontend-mu-two-39.vercel.app/)
+
 This project simulates a lightweight version of a Prime Video-like uploader and player system using a full-stack TypeScript application. It allows you to:
 
 - Upload a video from a frontend React UI
