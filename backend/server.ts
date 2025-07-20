@@ -8,54 +8,44 @@ import { spawn } from 'child_process';
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ✅ CORS: Allow all origins for dev; lock down in production
+// ✅ CORS configuration (frontend Vercel URL)
 app.use(cors({
-  origin: '*',
+  origin: 'https://frontend-mu-two-39.vercel.app',
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type']
+  allowedHeaders: ['Content-Type'],
+  credentials: true,
 }));
 
-// ✅ Preflight requests for mobile Safari / iOS
-app.options('/*splat', cors());
+app.options('*', cors());
 
+// ✅ Middleware
 app.use(express.json());
-
-// ✅ Serve static files
+app.use(express.static(path.join(__dirname, 'public')));
 app.use('/videos', express.static(path.join(__dirname, 'videos')));
 app.use('/thumbnails', express.static(path.join(__dirname, 'thumbnails')));
-app.use(express.static(path.join(__dirname, 'public')));
 
-// ✅ Ensure required directories exist
+// ✅ Ensure required directories
 ['uploads', 'videos', 'thumbnails'].forEach(dir => {
   const fullPath = path.join(__dirname, dir);
   if (!fs.existsSync(fullPath)) fs.mkdirSync(fullPath);
 });
 
-// ✅ Setup Multer for file uploads
+// ✅ Multer upload config
 const upload = multer({
   dest: path.join(__dirname, 'uploads'),
-  limits: { fileSize: 500 * 1024 * 1024 } // 500MB
+  limits: { fileSize: 500 * 1024 * 1024 },
 });
 
-// ✅ Health check route
+// ✅ Health route
 app.get('/', (_req: Request, res: Response) => {
   res.send(`
-    <html>
-      <head><title>Prime Video Backend</title></head>
-      <body style="font-family:sans-serif;padding:40px;">
-        <h1>🚀 Prime Video Backend</h1>
-        <p>Backend is running on port <b>${PORT}</b>.</p>
-        <p>POST a video file to <code>/upload</code> for HLS conversion.</p>
-      </body>
-    </html>
+    <html><body><h1>✅ Backend OK</h1><p>POST /upload to send video.</p></body></html>
   `);
 });
 
-// ✅ Upload and HLS conversion route
+// ✅ Upload & HLS conversion
 app.post('/upload', upload.single('video'), async (req: Request, res: Response) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'No file uploaded' });
-  }
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
   const inputPath = req.file.path;
   const baseName = path.parse(req.file.originalname).name.replace(/\s+/g, '_');
@@ -65,7 +55,7 @@ app.post('/upload', upload.single('video'), async (req: Request, res: Response) 
   try {
     fs.mkdirSync(outputDir, { recursive: true });
 
-    const hlsArgs = [
+    const ffmpeg = spawn('ffmpeg', [
       '-i', inputPath,
       '-vf', 'scale=w=360:h=640:force_original_aspect_ratio=decrease',
       '-c:a', 'aac',
@@ -77,44 +67,36 @@ app.post('/upload', upload.single('video'), async (req: Request, res: Response) 
       '-hls_segment_filename', path.join(outputDir, 'segment_%03d.ts'),
       path.join(outputDir, 'index.m3u8'),
       '-y'
-    ];
+    ]);
 
-    const ffmpegConvert = spawn('ffmpeg', hlsArgs);
+    ffmpeg.stderr.on('data', data => console.log('[FFmpeg]', data.toString()));
 
-    ffmpegConvert.stderr.on('data', data => console.log(`[FFmpeg] ${data}`));
-
-    ffmpegConvert.on('close', code => {
+    ffmpeg.on('close', code => {
       if (code !== 0) {
-        console.error('❌ FFmpeg HLS conversion failed');
-        return res.status(500).json({ error: 'HLS conversion failed' });
+        return res.status(500).json({ error: 'Video conversion failed' });
       }
 
-      // ✅ Generate thumbnail
-      const thumbArgs = [
+      // ✅ Thumbnail
+      spawn('ffmpeg', [
         '-i', inputPath,
         '-ss', '00:00:01',
         '-vframes', '1',
         thumbnailPath,
         '-y'
-      ];
-
-      spawn('ffmpeg', thumbArgs).on('close', () => {
-        fs.unlinkSync(inputPath); // Cleanup uploaded file
-
+      ]).on('close', () => {
+        fs.unlinkSync(inputPath);
         res.json({
           streamUrl: `/videos/${baseName}/index.m3u8`,
-          thumbnailUrl: `/thumbnails/${baseName}.jpg`
+          thumbnailUrl: `/thumbnails/${baseName}.jpg`,
         });
       });
     });
-
-  } catch (error) {
-    console.error('❌ Server error during upload', error);
-    res.status(500).json({ error: 'Server error during upload' });
+  } catch (err) {
+    console.error('Upload failed', err);
+    res.status(500).json({ error: 'Upload error' });
   }
 });
 
-// ✅ Start server
 app.listen(PORT, () => {
-  console.log(`✅ Backend running at http://localhost:${PORT}`);
+  console.log(`✅ Server running on http://localhost:${PORT}`);
 });
