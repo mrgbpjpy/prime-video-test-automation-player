@@ -13,7 +13,6 @@ const allowedOrigins = [
   'https://frontend-mu-two-39.vercel.app'
 ];
 
-// CORS setup
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
