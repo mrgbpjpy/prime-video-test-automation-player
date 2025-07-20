@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ✅ Create required directories if missing
+// ✅ Ensure required folders exist
 const requiredDirs = ['uploads', 'videos', 'thumbnails', 'public'];
 requiredDirs.forEach((dir) => {
   const fullPath = path.join(__dirname, dir);
@@ -18,30 +18,30 @@ requiredDirs.forEach((dir) => {
   }
 });
 
-// ✅ CORS config for Vercel frontend
+// ✅ CORS configuration for frontend hosted on Vercel
 app.use(cors({
-  origin: ['https://frontend-mu-two-39.vercel.app'], // production frontend
+  origin: ['https://frontend-mu-two-39.vercel.app'],
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type']
 }));
 
-// ❌ OLD (BROKEN): app.options(/(.*)/, cors());
-// ✅ FIXED: Replaced RegExp with '*' for Express 5 compatibility
-app.options('*', cors()); // ✅ FIXED THIS LINE to prevent "path-to-regexp" error
+// ❌ OLD (INVALID for Express 5): app.options(/(.*)/, cors());
+// ✅ FIXED THIS LINE for Express 5: replaced with valid named wildcard route
+app.options('/{*any}', cors()); // ✅ Express 5 requires named wildcard in path strings
 
-// ✅ Middleware
+// ✅ Middleware for JSON and static files
 app.use(express.json());
 app.use('/videos', express.static(path.join(__dirname, 'videos')));
 app.use('/thumbnails', express.static(path.join(__dirname, 'thumbnails')));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ✅ Multer for file uploads
+// ✅ File upload handling using Multer
 const upload = multer({
   dest: path.join(__dirname, 'uploads'),
   limits: { fileSize: 500 * 1024 * 1024 } // 500MB
 });
 
-// ✅ Health check
+// ✅ Health check endpoint
 app.get('/', (_req: Request, res: Response) => {
   res.send(`
     <html>
@@ -51,10 +51,10 @@ app.get('/', (_req: Request, res: Response) => {
         <p>POST a video file to <code>/upload</code> for HLS conversion.</p>
       </body>
     </html>
-  `); // ✅ FIXED: Ensured this template literal is closed properly
+  `); // ✅ FIXED previously: ensured template literal is properly closed
 });
 
-// ✅ Upload endpoint
+// ✅ Upload route for processing video with FFmpeg
 app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
@@ -91,7 +91,6 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
         return res.status(500).json({ error: 'HLS conversion failed' });
       }
 
-      // ✅ Generate thumbnail
       const thumbArgs = [
         '-y',
         '-i', inputPath,
@@ -104,7 +103,7 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
       thumbnail.stderr.on('data', (data) => console.log(`[Thumbnail] ${data}`));
 
       thumbnail.on('close', () => {
-        fs.unlinkSync(inputPath); // delete uploaded temp file
+        fs.unlinkSync(inputPath); // cleanup uploaded file
         console.log('✅ Video converted and thumbnail created.');
 
         res.json({
@@ -120,7 +119,7 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
   }
 });
 
-// ✅ Start server
+// ✅ Start the backend server
 app.listen(PORT, () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);
 });
