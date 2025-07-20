@@ -1,4 +1,4 @@
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import fs from 'fs';
@@ -8,33 +8,34 @@ import { spawn } from 'child_process';
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-const FRONTEND_ORIGIN = 'https://frontend-mu-two-39.vercel.app';
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://frontend-mu-two-39.vercel.app'
+];
 
-const corsOptions = {
-  origin: FRONTEND_ORIGIN,
+const corsOptions: cors.CorsOptions = {
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS error: ${origin} not allowed`));
+    }
+  },
+  credentials: true,
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  allowedHeaders: ['Content-Type', 'Authorization']
 };
 
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // ✅ Fixes Express 5 CORS issue
+
 app.use(express.json());
-
-// CORS Pre-flight handler for all routes
-app.options('/*', cors(corsOptions));
-
-// Static file serving
 app.use('/videos', express.static(path.join(__dirname, 'videos')));
 app.use('/thumbnails', express.static(path.join(__dirname, 'thumbnails')));
 
-// Multer config for file uploads
 const upload = multer({ dest: 'uploads/' });
 
-// Upload route
 app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
-  res.setHeader('Access-Control-Allow-Origin', FRONTEND_ORIGIN);
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
@@ -86,20 +87,11 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
         });
       });
     } else {
-      return res.status(500).json({ error: 'FFmpeg failed during video processing' });
+      return res.status(500).json({ error: 'FFmpeg failed' });
     }
   });
 });
 
-// Catch-all error handler (with CORS header for errors too)
-app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
-  res.setHeader('Access-Control-Allow-Origin', FRONTEND_ORIGIN);
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  console.error('❌ Server Error:', err.message);
-  res.status(500).json({ error: err.message });
-});
-
-// Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
+  console.log(`🚀 Server is running on http://localhost:${PORT}`);
 });
