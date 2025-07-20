@@ -1,140 +1,118 @@
-import React, { useState } from 'react';
-import VideoPlayer from './VideoPlayer';
-import './App.css';
+import React, { useState, useRef, useEffect } from 'react';
+import axios, { AxiosProgressEvent } from 'axios';
+import Hls from 'hls.js';
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000';
+const App: React.FC = () => {
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [uploading, setUploading] = useState<boolean>(false);
+  const [streamURL, setStreamURL] = useState<string>('');
+  const [status, setStatus] = useState<string>('');
 
-function AppWithTestPreview() {
-  const [videoUrl, setVideoUrl] = useState('');
-  const [thumbnailUrl, setThumbnailUrl] = useState('');
-  const [uploadKey, setUploadKey] = useState(0);
-  const [status, setStatus] = useState('');
-  const [progress, setProgress] = useState(0);
-  const [uploading, setUploading] = useState(false);
-  const [testLog, setTestLog] = useState<string[]>([]);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  const appendLog = (msg: string) => {
-    setTestLog(prev => [...prev, `TEST: ${msg}`]);
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.length) {
+      setSelectedFile(e.target.files[0]);
+    }
   };
 
-  const handleUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    appendLog(`User selected file: ${file.name}`);
-
-    setVideoUrl('');
-    setThumbnailUrl('');
-    setUploadKey(prev => prev + 1);
-    setStatus('Uploading...');
-    setProgress(0);
-    setUploading(true);
-    setTestLog([]);
-    appendLog('Uploading video to backend...');
+  const handleUpload = async () => {
+    if (!selectedFile) return;
 
     const formData = new FormData();
-    formData.append('video', file);
+    formData.append('video', selectedFile);
 
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${API_BASE_URL}/upload`, true);
-    xhr.withCredentials = false;
+    setUploading(true);
+    setUploadProgress(0);
+    setStatus('Uploading...');
 
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) {
-        const percent = Math.round((e.loaded / e.total) * 100);
-        setProgress(percent);
-        appendLog(`Upload progress: ${percent}%`);
-      }
-    };
-
-    xhr.onloadstart = () => {
-      setStatus('Uploading...');
-      appendLog('XHR upload started...');
-    };
-
-    xhr.onload = () => {
-      if (xhr.status === 200) {
-        try {
-          const data = JSON.parse(xhr.responseText);
-          setStatus('Converting...');
-          setProgress(100);
-          appendLog('Upload complete. Backend is converting...');
-
-          setTimeout(() => {
-            setVideoUrl(`${API_BASE_URL}${data.streamUrl}`);
-            setThumbnailUrl(`${API_BASE_URL}${data.thumbnailUrl}`);
-            setStatus('Done');
-            setUploading(false);
-            appendLog('Conversion complete. Stream ready.');
-            appendLog('Test simulation complete.');
-          }, 1500);
-        } catch (err) {
-          setStatus('Failed to parse response');
-          setUploading(false);
-          appendLog('Failed to parse JSON response from backend.');
+    try {
+      const res = await axios.post(
+        'https://prime-video-backend.onrender.com/upload',
+        formData,
+        {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress: (progressEvent: AxiosProgressEvent) => {
+            if (progressEvent.total) {
+              const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+              setUploadProgress(percent);
+            }
+          }
         }
-      } else {
-        setStatus(`Upload failed (${xhr.status})`);
-        setUploading(false);
-        appendLog(`Upload failed with status ${xhr.status}`);
-      }
-    };
+      );
 
-    xhr.onerror = () => {
-      setStatus('Upload error');
+      const { streamUrl } = res.data;
+      setStatus('Converting...');
+      pollForHLSReady(streamUrl);
+    } catch (err) {
+      setStatus('❌ Upload failed');
+      console.error(err);
+    } finally {
       setUploading(false);
-      appendLog('Upload error (network or CORS issue)');
-    };
-
-    xhr.send(formData);
+    }
   };
 
-  return (
-    <div className="App">
-      <h1>Prime Video Player Demo</h1>
-<h2>Made By Erick Esquilin</h2>
-<h3>
-  Email:{' '}
-  <a href="mailto:mrgbpjpy@gmail.com">mrgbpjpy@gmail.com</a>
-</h3>
+  const pollForHLSReady = (url: string) => {
+    const interval = setInterval(() => {
+      fetch(`https://prime-video-backend.onrender.com${url}`, { method: 'HEAD' })
+        .then((res) => {
+          if (res.ok) {
+            clearInterval(interval);
+            setStatus('✅ Video is ready to watch!');
+            setStreamURL(`https://prime-video-backend.onrender.com${url}`);
+          }
+        })
+        .catch(() => {});
+    }, 2000);
+  };
 
-      <input type="file" accept="video/*" onChange={handleUpload} />
+  useEffect(() => {
+    if (streamURL && videoRef.current) {
+      if (videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
+        videoRef.current.src = streamURL;
+      } else if (Hls.isSupported()) {
+        const hls = new Hls();
+        hls.loadSource(streamURL);
+        hls.attachMedia(videoRef.current);
+        hls.on(Hls.Events.ERROR, function (event, data) {
+          console.error('HLS.js error:', data);
+        });
+      } else {
+        console.warn('HLS not supported');
+      }
+    }
+  }, [streamURL]);
+
+  return (
+    <div style={{ textAlign: 'center', paddingTop: '40px', fontFamily: 'Arial' }}>
+      <h1>🎬 Prime Video Player Demo</h1>
+
+      <input type="file" accept="video/*" onChange={handleFileChange} />
+      <button onClick={handleUpload} disabled={!selectedFile || uploading} style={{ marginLeft: 10 }}>
+        Upload
+      </button>
 
       {uploading && (
-        <div className="spinner-container">
+        <div style={{ marginTop: '20px' }}>
+          <p>Uploading: {uploadProgress}%</p>
+          <progress value={uploadProgress} max="100" style={{ width: '300px' }} />
+        </div>
+      )}
+
+      {status && (
+        <div style={{ marginTop: '20px', fontWeight: 'bold' }}>
           <p>{status}</p>
-          <div className="progress-bar">
-            <div className="progress-bar-fill" style={{ width: `${progress}%` }}>
-              {progress}%
-            </div>
-          </div>
         </div>
       )}
 
-      {!uploading && videoUrl && (
-        <div className="video-wrapper">
-          <VideoPlayer key={uploadKey} src={videoUrl} poster={thumbnailUrl} />
+      {streamURL && (
+        <div style={{ marginTop: '30px' }}>
+          <video ref={videoRef} controls style={{ width: '100%', maxWidth: '720px' }} />
         </div>
       )}
-
-      <div style={{ textAlign: 'left', maxWidth: 800, margin: '30px auto' }}>
-        <h2>Test Simulation Log</h2>
-        <div style={{
-          backgroundColor: '#111',
-          color: '#0f0',
-          fontFamily: 'monospace',
-          padding: '10px',
-          borderRadius: '5px',
-          minHeight: '150px',
-        }}>
-          {testLog.length === 0
-            ? <p>Waiting for test simulation...</p>
-            : testLog.map((log, idx) => <p key={idx}>{log}</p>)
-          }
-        </div>
-      </div>
     </div>
   );
-}
+};
 
-export default AppWithTestPreview;
+export default App;
