@@ -1,6 +1,8 @@
+[project]
+root = "backend"
+
 [build]
 command = "npm install"
 
 [start]
-command = "node backend/server.js"  # Change this to match your file
-
+command = "node server.js"  # or index.js depending on your entry file
