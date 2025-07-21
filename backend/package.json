@@ -1,23 +1,11 @@
 {
-  "name": "prime-video-backend",
+  "name": "backend",
   "version": "1.0.0",
-  "description": "Backend API for Prime Video Player",
-  "main": "index.tsx",
-  "type": "module",
+  "main": "index.js",
   "scripts": {
-    "start": "bun run index.tsx",
-    "build": "tsc",
-    "dev": "bun run index.tsx",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
-  "keywords": [],
-  "author": "Erick Esquilin",
-  "license": "MIT",
   "dependencies": {
-    "hono": "^4.0.0",
-    "@hono/cors": "^4.0.0"
-  },
-  "devDependencies": {
-    "typescript": "^5.3.3"
+    "hono": "^3.6.2"
   }
 }
