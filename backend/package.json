@@ -15,7 +15,7 @@
   "license": "MIT",
   "dependencies": {
     "hono": "^4.0.0",
-    "hono/cors": "^4.0.0"
+    "@hono/cors": "^4.0.0"
   },
   "devDependencies": {
     "typescript": "^5.3.3"
