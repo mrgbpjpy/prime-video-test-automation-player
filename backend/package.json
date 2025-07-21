@@ -2,13 +2,13 @@
   "name": "prime-video-backend",
   "version": "1.0.0",
   "description": "Backend API for Prime Video Player",
-  "main": "server.ts",
+  "main": "index.tsx",
   "type": "module",
   "scripts": {
     "start": "bun run index.tsx",
     "build": "tsc",
-    "start:prod": "node dist/server.js",
-    "dev": "ts-node-dev --respawn server.ts",
+    "start:prod": "bun run index.tsx",
+    "dev": "bun run index.tsx",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -27,7 +27,7 @@
     "@types/express": "^5.0.3",
     "@types/fluent-ffmpeg": "^2.1.27",
     "@types/multer": "^2.0.0",
-    "@types/node": "^24.0.15",
+    "@types/node": "^20.15.6",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.8.3"
