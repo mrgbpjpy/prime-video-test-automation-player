@@ -1,6 +1,6 @@
 [build]
-  command = "npm install"
+command = "npm install"
 
 [start]
-command = "node backend/index.js"
+command = "node backend/server.js"  # Change this to match your file
 
