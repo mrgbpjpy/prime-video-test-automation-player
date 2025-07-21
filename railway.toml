@@ -3,7 +3,9 @@ name = "prime-video-test-automation-player"
 root = "backend"
 
 [build]
-command = "npm ci"
+dockerfile = "backend/Dockerfile"
+context = "backend"
+
 
 [start]
 command = "node index.js"
