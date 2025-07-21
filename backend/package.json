@@ -5,7 +5,7 @@
   "main": "server.ts",
   "type": "module",
   "scripts": {
-    "start": "ts-node server.ts",
+    "start": "bun run index.tsx",
     "build": "tsc",
     "start:prod": "node dist/server.js",
     "dev": "ts-node-dev --respawn server.ts",
