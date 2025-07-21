@@ -1,9 +1,10 @@
 [project]
+name = "prime-video-test-automation-player"
 root = "backend"
 
 [build]
-command = "npm install"
+command = "npm ci"
 
 [start]
-command = "npm run start"
+command = "node index.js"
 
