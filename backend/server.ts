@@ -4,17 +4,34 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
+import 'dotenv/config';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 const FRONTEND_ORIGIN = 'https://frontend-mu-two-39.vercel.app';
 
+// CORS setup
 app.use(cors({
-  origin: FRONTEND_ORIGIN,
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  origin: (origin, callback) => {
+    if (!origin || origin === FRONTEND_ORIGIN || origin === `${FRONTEND_ORIGIN}/`) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+}));
+
+app.options('*', cors({
+  origin: (origin, callback) => {
+    if (!origin || origin === FRONTEND_ORIGIN || origin === `${FRONTEND_ORIGIN}/`) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
 }));
 
 app.use(express.json());
@@ -23,93 +40,100 @@ app.use('/thumbnails', express.static(path.join(__dirname, 'thumbnails')));
 
 const upload = multer({ dest: 'uploads/' });
 
-app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
-  res.setHeader('Access-Control-Allow-Origin', FRONTEND_ORIGIN);
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-
-  if (!req.file) {
-    return res.status(400).json({ error: 'No file uploaded' });
-  }
-
-  const { originalname, path: tempPath } = req.file;
-  const baseFilename = path.parse(originalname).name;
-  const outputDir = path.join(__dirname, 'videos', baseFilename);
-
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
-  }
-
-  const outputPath = path.join(outputDir, 'index.m3u8');
-  const thumbnailPath = path.join(__dirname, 'thumbnails', `${baseFilename}.jpg`);
-
-  const ffmpeg = spawn('ffmpeg', [
-    '-i', tempPath,
-    '-vf', 'scale=1280:-2',
-    '-c:v', 'libx264',
-    '-profile:v', 'main',
-    '-crf', '20',
-    '-sc_threshold', '0',
-    '-g', '48',
-    '-keyint_min', '48',
-    '-c:a', 'aac',
-    '-ar', '48000',
-    '-b:a', '128k',
-    '-hls_time', '10',
-    '-hls_playlist_type', 'vod',
-    '-f', 'hls',
-    outputPath
-  ]);
-
-  ffmpeg.on('close', (code) => {
-    try {
-      fs.unlinkSync(tempPath);
-    } catch (err) {
-      console.warn('❌ Failed to delete temp file:', err);
+app.post('/upload', (req: Request, res: Response, next: NextFunction) => {
+  upload.single('video')(req, res, (err) => {
+    const origin = req.get('origin');
+    if (origin === FRONTEND_ORIGIN || origin === `${FRONTEND_ORIGIN}/`) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
     }
 
-    if (code !== 0) {
-      return res.status(500).json({ error: 'FFmpeg processing failed' });
+    if (err instanceof multer.MulterError || err) {
+      return res.status(400).json({ error: err.message });
     }
 
-    const thumbnail = spawn('ffmpeg', [
-      '-i', path.join(outputDir, 'index.m3u8'),
-      '-ss', '00:00:02.000',
-      '-vframes', '1',
-      thumbnailPath
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const { originalname, path: tempPath } = req.file;
+    const baseFilename = path.parse(originalname).name;
+    const outputDir = path.join(__dirname, 'videos', baseFilename);
+    const outputPath = path.join(outputDir, 'index.m3u8');
+    const thumbnailPath = path.join(__dirname, 'thumbnails', `${baseFilename}.jpg`);
+
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    const ffmpeg = spawn('ffmpeg', [
+      '-i', tempPath,
+      '-vf', 'scale=1280:-2',
+      '-c:v', 'libx264',
+      '-profile:v', 'main',
+      '-crf', '20',
+      '-sc_threshold', '0',
+      '-g', '48',
+      '-keyint_min', '48',
+      '-c:a', 'aac',
+      '-ar', '48000',
+      '-b:a', '128k',
+      '-hls_time', '10',
+      '-hls_playlist_type', 'vod',
+      '-f', 'hls',
+      outputPath
     ]);
 
-    thumbnail.on('close', (thumbCode) => {
-      if (thumbCode !== 0) {
-        return res.status(500).json({ error: 'Thumbnail generation failed' });
+    ffmpeg.on('close', (code) => {
+      fs.unlinkSync(tempPath);
+      if (code !== 0) {
+        return res.status(500).json({ error: 'FFmpeg processing failed' });
       }
 
-      return res.json({
-        message: 'Upload and processing successful',
-        streamUrl: `/videos/${baseFilename}/index.m3u8`,
-        thumbnailUrl: `/thumbnails/${baseFilename}.jpg`
+      const thumbnail = spawn('ffmpeg', [
+        '-i', outputPath,
+        '-ss', '00:00:02.000',
+        '-vframes', '1',
+        thumbnailPath
+      ]);
+
+      thumbnail.on('close', (thumbCode) => {
+        if (thumbCode !== 0) {
+          return res.status(500).json({ error: 'Thumbnail generation failed' });
+        }
+
+        return res.json({
+          message: 'Upload and processing successful',
+          streamUrl: `/videos/${baseFilename}/index.m3u8`,
+          thumbnailUrl: `/thumbnails/${baseFilename}.jpg`
+        });
+      });
+
+      thumbnail.on('error', (err) => {
+        return res.status(500).json({ error: 'Thumbnail error' });
       });
     });
 
-    thumbnail.on('error', (err) => {
-      console.error('❌ Thumbnail error:', err);
-      return res.status(500).json({ error: 'Thumbnail generation error' });
+    ffmpeg.on('error', (err) => {
+      return res.status(500).json({ error: 'FFmpeg spawn error' });
     });
-  });
-
-  ffmpeg.on('error', (err) => {
-    console.error('❌ FFmpeg error:', err);
-    return res.status(500).json({ error: 'FFmpeg execution error' });
   });
 });
 
-// General error handler for Express 4
+app.get('/health', (req: Request, res: Response) => {
+  res.status(200).json({ status: 'OK' });
+});
+
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  res.setHeader('Access-Control-Allow-Origin', FRONTEND_ORIGIN);
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  const origin = req.get('origin');
+  if (origin === FRONTEND_ORIGIN || origin === `${FRONTEND_ORIGIN}/`) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
   console.error('❌ Server error:', err.message);
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server is running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server is running on http://0.0.0.0:${PORT}`);
 });
