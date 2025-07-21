@@ -9,10 +9,10 @@ import 'dotenv/config';
 const app = express();
 const PORT = parseInt(process.env.PORT || '5000', 10);
 const FRONTEND_ORIGIN = 'https://frontend-mu-two-39.vercel.app';
-
 const ALLOWED_ORIGINS = [FRONTEND_ORIGIN, 'http://localhost:3000'];
 
-app.use(cors({
+// ✅ CORS middleware
+const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
     if (!origin || ALLOWED_ORIGINS.includes(origin)) {
       callback(null, origin || '*');
@@ -23,27 +23,20 @@ app.use(cors({
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
-}));
+};
 
-app.options('*', cors({
-  origin: (origin, callback) => {
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
-      callback(null, origin || '*');
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
-}));
-
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json());
+
+// ✅ Serve static HLS videos and thumbnails
 app.use('/videos', express.static(path.join(__dirname, 'videos')));
 app.use('/thumbnails', express.static(path.join(__dirname, 'thumbnails')));
 
+// ✅ Multer for file uploads
 const upload = multer({ dest: 'uploads/' });
 
+// ✅ Upload endpoint
 app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
   const origin = req.get('origin');
   if (origin && ALLOWED_ORIGINS.includes(origin)) {
@@ -87,7 +80,7 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
     try {
       fs.unlinkSync(tempPath);
     } catch (err) {
-      console.warn('Failed to delete temp file:', err);
+      console.warn('⚠️ Failed to delete temp file:', err);
     }
 
     if (code !== 0) {
@@ -116,31 +109,34 @@ app.post('/upload', upload.single('video'), (req: Request, res: Response) => {
       });
     });
 
-    thumbnail.on('error', (err) => {
+    thumbnail.on('error', () => {
       return res.status(500).json({ error: 'Thumbnail error' });
     });
   });
 
-  ffmpeg.on('error', (err) => {
+  ffmpeg.on('error', () => {
     return res.status(500).json({ error: 'FFmpeg execution error' });
   });
 });
 
-app.get('/health', (req: Request, res: Response) => {
+// ✅ Health check endpoint
+app.get('/health', (_req: Request, res: Response) => {
   res.status(200).json({ status: 'OK' });
 });
 
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+// ✅ Global error handler
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
   const origin = req.get('origin');
   if (origin && ALLOWED_ORIGINS.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
   }
 
-  console.error('Server error:', err.message);
+  console.error('❌ Server error:', err.message);
   res.status(500).json({ error: 'Internal server error' });
 });
 
+// ✅ Listen on all interfaces for Render
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server is running on http://0.0.0.0:${PORT}`);
 });
