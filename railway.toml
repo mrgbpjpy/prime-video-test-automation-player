@@ -5,4 +5,5 @@ root = "backend"
 command = "npm install"
 
 [start]
-command = "node server.js"  # or index.js depending on your entry file
+command = "npm run start"
+
